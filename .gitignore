@@ -8,3 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+
+*code-workspace
+.ipynb_checkpoints
+.python-version
+
