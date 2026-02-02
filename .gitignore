@@ -14,3 +14,5 @@ wheels/
 .python-version
 
 runs/
+downloaded_folder/
+
