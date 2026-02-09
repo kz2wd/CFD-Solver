@@ -16,3 +16,6 @@ wheels/
 runs/
 downloaded_folder/
 
+.virtual_documents
+C/debug
+*.out
