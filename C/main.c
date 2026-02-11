@@ -28,6 +28,8 @@ typedef struct {
     // begin compute var
     double* ubuf1;
     double* ubuf2;
+    double* pbuf1;
+    double* pbuf2;
     // end compute var
     //
     const size_t X;
@@ -36,16 +38,18 @@ typedef struct {
 } simulation;
 
 
-simulation init_simulation(const double re, const double dt, const size_t X, const size_t K, const long seed) {
+simulation init_simulation(const double re, const double dt, const size_t X, const double K, const long seed) {
     simulation simu = {
         .dx= 1.0 / X,
         .dt=dt,
-        .nu= 1.0 / re,
+        .nu= (1.0 * K) / re,
         .K = K,
         .u = (double*) calloc(X * X * 2, sizeof(double)),
         .p = (double*) calloc(X * X, sizeof(double)),
         .ubuf1 = (double*) calloc(X * X * 2, sizeof(double)),
         .ubuf2 = (double*) calloc(X * X * 2, sizeof(double)),
+        .pbuf1 = (double*) calloc(X * X, sizeof(double)),
+        .pbuf2 = (double*) calloc(X * X, sizeof(double)),
         .X = X,
         .seed = seed,
     };
@@ -160,7 +164,39 @@ void viscous_drag(double* const u, double* const visc, const double nu, const si
     }
 }
 
-void pressure(double* const u, double* const p, const size_t X, const double dx, const double K) {
+void compute_pressure_rhs(double* const u, double* rhs, const size_t X, const double dx) {
+    const double two_dx = 2 * dx;
+    const double d2 = dx * dx;
+    for (size_t i = 1; i < X - 1; ++i) {
+        for (size_t j = 1; j < X - 1; ++j) {
+            at1d(rhs, i, j, X) = ((at2d(u, i + 1, j, 0, X) - at2d(u, i - 1, j, 0, X) + at2d(u, i, j + 1, 1, X) - at2d(u, i, j - 1, 1, X)) / two_dx ) * d2;
+        }
+    }
+}
+
+void pressure_jacobi(double* const u, double* const rhs, double* const p, double* const pbuf, const size_t X, const double dx, const double K) {
+    bcu(u, K, X);
+    bcp(p, X);
+
+
+    const double omega = 2.0 / (1.0 + sin(M_PI / (double)X));
+    const double one_m_omega = 1.0 - omega;
+
+    const unsigned int iters = 50;
+
+    for (unsigned int iter = 0; iter < iters; ++iter) {
+        for (size_t i = 1; i < X - 1; ++i) {
+            for (size_t j = 1; j < X - 1; ++j) {
+
+                at1d(p, i, j, X) = one_m_omega * at1d(p, i, j, X)
+                    + omega * (at1d(p, i + 1, j, X) + at1d(p, i - 1, j, X) + at1d(p, i, j + 1, X) + at1d(p, i, j - 1, X) - at1d(rhs, i, j, X)) / 4.0;
+            }
+        }
+    }
+}
+
+// TODO FIX OLD & BAD
+void pressure_GS(double* const u, double* const p, const size_t X, const double dx, const double K) {
     bcu(u, K, X);
     bcp(p, X);
 
@@ -170,7 +206,7 @@ void pressure(double* const u, double* const p, const size_t X, const double dx,
     const double one_m_omega = 1.0 - omega;
 
     const unsigned int iters = X;
-    for (unsigned int i = 0; i < iters; ++i) {
+    for (unsigned int iter = 0; iter < iters; ++iter) {
         for (size_t i = 1; i < X - 1; ++i) {
             for (size_t j = 1; j < X - 1; ++j) {
                 const double rhs = ((at2d(u, i + 1, j, 0, X) - at2d(u, i - 1, j, 0, X) + at2d(u, i, j + 1, 1, X) - at2d(u, i, j - 1, 1, X)) / two_dx ) * d2;
@@ -196,6 +232,7 @@ void assemble_u(double* const u, double* const u_out, const double* const conv, 
     for (size_t i = 1; i < X - 1; ++i) {
         for (size_t j = 1; j < X - 1; ++j) {
             at2d(u_out, i, j, 0, X) =  at2d(u, i, j, 0, X) + dt * (-at2d(conv, i, j, 0, X) + at2d(visc, i, j, 0, X));
+            at2d(u_out, i, j, 1, X) =  at2d(u, i, j, 1, X) + dt * (-at2d(conv, i, j, 1, X) + at2d(visc, i, j, 1, X));
         }
     }
 }
@@ -221,8 +258,8 @@ void step_EE(simulation* sim){
     viscous_drag(sim->u, sim->ubuf2, sim->nu, sim->X, sim->dx, sim->K);
 
     assemble_u(sim->u, sim->u, sim->ubuf1, sim->ubuf2, sim->dt, sim->X);
-
-    pressure(sim->u, sim->p, sim->X, sim->dx, sim->K);
+    compute_pressure_rhs(sim->u, sim->pbuf1, sim->X, sim->dx);
+    pressure_jacobi(sim->u, sim->pbuf1, sim->p, sim->pbuf2, sim->X, sim->dx, sim->K);
 
     project_velocity(sim->u, sim->u, sim->p, sim->X, sim->dx, sim->K);
 
@@ -248,11 +285,11 @@ int main(int argc, char** argv) {
 
     printf("Starting simulation\n");
 
-    simulation sim = init_simulation(100.0, 0.00001, 64, 1.0, 0);
-    init_u(sim.u, sim.X, 0.0001);
-    init_p(sim.p, sim.X, 0.0001);
+    simulation sim = init_simulation(100.0, 0.0001, 64, 1.0, 0);
+    init_u(sim.u, sim.X, 0.00001);
+    init_p(sim.p, sim.X, 0.00001);
 
-    loop(&sim, 10000, 50);
+    loop(&sim, 10, 1);
 
     return EXIT_SUCCESS;
 }
