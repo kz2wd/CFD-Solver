@@ -15,20 +15,29 @@
 #define at2d(M, i, j, c, X) ((M)[(i) * ((X) * 2) + (j) * (2) + (c)])
 #define at1d(M, i, j, X) ((M)[(i) * (X) + (j)])
 
+typedef const double* const f64ro;
+typedef double* const f64rw;
+typedef const size_t dim;
+typedef const double cd;
+
 typedef struct {
 
     const double dx;
     const double dt;
     const double nu;
     const double K;
-    double* u;
-    double* p;
+    f64rw u;
+    f64rw p;
 
     // begin compute var
-    double* ubuf1;
-    double* ubuf2;
-    double* pbuf1;
-    double* pbuf2;
+    f64rw ubuf1;
+    f64rw ubuf2;
+    f64rw ubuf3;
+    f64rw ubuf4;
+    f64rw ubuf5;
+    f64rw ubuf6;
+    f64rw pbuf1;
+    f64rw pbuf2;
     // end compute var
     //
     const size_t X;
@@ -43,12 +52,16 @@ simulation init_simulation(const double re, const double dt, const size_t X, con
         .dt=dt,
         .nu= (1.0 * K) / re,
         .K = K,
-        .u = (double*) calloc(X * X * 2, sizeof(double)),
-        .p = (double*) calloc(X * X, sizeof(double)),
-        .ubuf1 = (double*) calloc(X * X * 2, sizeof(double)),
-        .ubuf2 = (double*) calloc(X * X * 2, sizeof(double)),
-        .pbuf1 = (double*) calloc(X * X, sizeof(double)),
-        .pbuf2 = (double*) calloc(X * X, sizeof(double)),
+        .u = (f64rw) calloc(X * X * 2, sizeof(double)),
+        .p = (f64rw) calloc(X * X, sizeof(double)),
+        .ubuf1 = (f64rw) calloc(X * X * 2, sizeof(double)),
+        .ubuf2 = (f64rw) calloc(X * X * 2, sizeof(double)),
+        .ubuf3 = (f64rw) calloc(X * X * 2, sizeof(double)),
+        .ubuf4 = (f64rw) calloc(X * X * 2, sizeof(double)),
+        .ubuf5 = (f64rw) calloc(X * X * 2, sizeof(double)),
+        .ubuf6 = (f64rw) calloc(X * X * 2, sizeof(double)),
+        .pbuf1 = (f64rw) calloc(X * X, sizeof(double)),
+        .pbuf2 = (f64rw) calloc(X * X, sizeof(double)),
         .X = X,
         .seed = seed,
     };
@@ -69,7 +82,7 @@ void connect_mmap(const size_t X) {
                       PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
 }
 
-void write_u(const double * const u, const size_t X, const unsigned int step) {
+void write_u(f64ro u, const size_t X, const unsigned int step) {
     const size_t N = X*X*2;
     memcpy(shm->data, u, N * sizeof(double));
     atomic_store_explicit(&shm->write_idx, step, memory_order_release);
@@ -82,7 +95,7 @@ double rand_range(double min_n, double max_n)
 }
 
 
-void init_u(double* const u, const size_t X, const double scale) {
+void init_u(f64rw u, const size_t X, const double scale) {
     const double up = 0.5 * scale;
     const double low = -0.5 * scale;
     for (size_t i = 1; i < X - 1; ++i) {
@@ -93,7 +106,7 @@ void init_u(double* const u, const size_t X, const double scale) {
     }
 }
 
-void init_p(double* const p, const size_t X, const double scale) {
+void init_p(f64rw p, const size_t X, const double scale) {
     const double up = 0.5 * scale;
     const double low = -0.5 * scale;
     for (size_t j = 1; j < X - 1; ++j) {
@@ -105,7 +118,7 @@ void init_p(double* const p, const size_t X, const double scale) {
 
 
 // Ldc bc
-void bcu(double* const u, const double K, const size_t X) {
+void bcu(f64rw u, const double K, const size_t X) {
     for (size_t i = 1; i < X - 1; ++i) {
         // lid top
         at2d(u, i, 0, 0, X) = 2 * K - at2d(u, i, 1, 0, X);
@@ -127,7 +140,7 @@ void bcu(double* const u, const double K, const size_t X) {
 }
 
 // Ldc bc
-void bcp(double* p, const size_t X) {
+void bcp(f64rw p, const size_t X) {
     for (size_t i = 1; i < X - 1; ++i) {
         at1d(p, i, 0, X) = at1d(p, i, 1, X);
         at1d(p, i, X - 1, X) = at1d(p, i, X - 2, X);
@@ -137,7 +150,7 @@ void bcp(double* p, const size_t X) {
 }
 
 // (u⋅∇)uc = ux ∂x uc + uy ∂y uc | (d = ∂)
-void convection(double* const u, double* const conv, const size_t X, const double dx, const double K) {
+void convection(f64rw u, f64rw conv, const size_t X, const double dx, const double K) {
     bcu(u, K, X);
     const double two_dx = 2 * dx;
     for (size_t i = 1; i < X - 1; ++i) {
@@ -152,7 +165,7 @@ void convection(double* const u, double* const conv, const size_t X, const doubl
     }
 }
 
-void viscous_drag(double* const u, double* const visc, const double nu, const size_t X, const double dx, const double K) {
+void viscous_drag(f64rw u, f64rw visc, const double nu, const size_t X, const double dx, const double K) {
     bcu(u, K, X);
     const double d2 = dx * dx;
     for (size_t i = 1; i < X - 1; ++i) {
@@ -163,7 +176,7 @@ void viscous_drag(double* const u, double* const visc, const double nu, const si
     }
 }
 
-void compute_pressure_rhs(double* const u, double* rhs, const size_t X, const double dx) {
+void compute_pressure_rhs(f64ro u, f64rw rhs, const size_t X, const double dx) {
     const double two_dx = 2 * dx;
     const double d2 = dx * dx;
     for (size_t i = 1; i < X - 1; ++i) {
@@ -173,10 +186,9 @@ void compute_pressure_rhs(double* const u, double* rhs, const size_t X, const do
     }
 }
 
-void pressure_jacobi(double* const u, double* const rhs, double* const p, double* const pbuf, const size_t X, const double dx, const double K) {
+void pressure_jacobi(f64rw u, f64ro rhs, f64rw p, f64rw pbuf, const size_t X, const double dx, const double K) {
     bcu(u, K, X);
     bcp(p, X);
-
 
     const double omega = 2.0 / (1.0 + sin(M_PI / (double)X));
     const double one_m_omega = 1.0 - omega;
@@ -186,7 +198,6 @@ void pressure_jacobi(double* const u, double* const rhs, double* const p, double
     for (unsigned int iter = 0; iter < iters; ++iter) {
         for (size_t i = 1; i < X - 1; ++i) {
             for (size_t j = 1; j < X - 1; ++j) {
-
                 at1d(p, i, j, X) = one_m_omega * at1d(p, i, j, X)
                     + omega * (at1d(p, i + 1, j, X) + at1d(p, i - 1, j, X) + at1d(p, i, j + 1, X) + at1d(p, i, j - 1, X) - at1d(rhs, i, j, X)) / 4.0;
             }
@@ -194,7 +205,7 @@ void pressure_jacobi(double* const u, double* const rhs, double* const p, double
     }
 }
 
-void pressure_GS(double* const u, double* const p,  double* const rhs, const size_t X, const double dx, const double K) {
+void pressure_GS(f64rw u, f64rw p, f64ro rhs, const size_t X, const double dx, const double K) {
     bcu(u, K, X);
     bcp(p, X);
 
@@ -214,7 +225,7 @@ void pressure_GS(double* const u, double* const p,  double* const rhs, const siz
     }
 }
 
-void project_velocity(double* const u, double* const u_out, double* const p, const size_t X, const double dx, const double K) {
+void project_velocity(f64rw u, f64rw u_out, double* const p, const size_t X, const double dx, const double K) {
     bcu(u, K, X);
     bcp(p, X);
     for (size_t i = 1; i < X - 1; ++i) {
@@ -225,16 +236,16 @@ void project_velocity(double* const u, double* const u_out, double* const p, con
     }
 }
 
-void assemble_u(double* const u, double* const u_out, const double* const conv, const double* const visc, const double dt, const size_t X) {
+void assemble_u(f64ro u, f64rw u_out, f64ro conv, f64ro visc, cd factor, const size_t X) {
     for (size_t i = 1; i < X - 1; ++i) {
         for (size_t j = 1; j < X - 1; ++j) {
-            at2d(u_out, i, j, 0, X) =  at2d(u, i, j, 0, X) + dt * (-at2d(conv, i, j, 0, X) + at2d(visc, i, j, 0, X));
-            at2d(u_out, i, j, 1, X) =  at2d(u, i, j, 1, X) + dt * (-at2d(conv, i, j, 1, X) + at2d(visc, i, j, 1, X));
+            at2d(u_out, i, j, 0, X) =  at2d(u, i, j, 0, X) + factor * (-at2d(conv, i, j, 0, X) + at2d(visc, i, j, 0, X));
+            at2d(u_out, i, j, 1, X) =  at2d(u, i, j, 1, X) + factor * (-at2d(conv, i, j, 1, X) + at2d(visc, i, j, 1, X));
         }
     }
 }
 
-void debug(const double* const u, const size_t X){
+void debug(f64ro u, const size_t X){
 
     double total = 0.0;
     double count = 0.0;
@@ -247,6 +258,16 @@ void debug(const double* const u, const size_t X){
     }
     double mean = total / count;
     printf("mean: %f\n", mean);
+}
+
+
+void field_add(f64rw out, f64ro a, cd b_factor, f64ro b, dim X) {
+    for (size_t i = 1; i < X - 1; ++i) {
+        for (size_t j = 1; j < X - 1; ++j) {
+            at2d(out, i, j, 0, X) = at2d(a, i, j, 0, X) + b_factor * at2d(b, i, j, 0, X);
+            at2d(out, i, j, 1, X) = at2d(a, i, j, 1, X) + b_factor * at2d(b, i, j, 1, X);
+        }
+    }
 }
 
 void step_EE(simulation* sim){
@@ -263,10 +284,71 @@ void step_EE(simulation* sim){
 
 }
 
+
+void rk4_f(f64rw out, f64rw u, f64rw conv, f64rw visc, cd factor, dim X, cd dx, cd K, cd nu) {
+    convection(u, conv, X, dx, K);
+    viscous_drag(u, visc, nu, X, dx, K);
+    assemble_u(u, out, conv, visc, factor, X);
+}
+
+void rk4_combine_k(f64rw out, f64rw u, f64ro k1, f64ro k2, f64ro k3, f64ro k4, cd factor, dim X) {
+    for (size_t i = 1; i < X - 1; ++i) {
+        for (size_t j = 1; j < X - 1; ++j) {
+            at2d(out, i, j, 0, X) = at2d(u, i, j, 0, X) + factor * (at2d(k1, i, j, 0, X) + 2.0 * at2d(k2, i, j, 0, X) + 2.0 * at2d(k3, i, j, 0, X) + at2d(k4, i, j, 0, X));
+            at2d(out, i, j, 1, X) = at2d(u, i, j, 1, X) + factor * (at2d(k1, i, j, 1, X) + 2.0 * at2d(k2, i, j, 1, X) + 2.0 * at2d(k3, i, j, 1, X) + at2d(k4, i, j, 1, X));
+        }
+    }
+}
+
+void rk4_pressure(f64rw out, f64rw u, f64rw p, f64rw rhs, dim X, cd dx, cd K) {
+    compute_pressure_rhs(u, rhs, X, dx);
+    pressure_GS(u, p, rhs, X, dx, K);
+    project_velocity(u, out, p, X, dx, K);
+}
+
+void step_RK4(simulation* sim) {
+
+    dim X = sim->X;
+    cd dx = sim->dx;
+    cd K = sim->K;
+    cd nu = sim->nu;
+    cd dt = sim->dt;
+
+    f64rw un = sim->u;
+
+    f64rw conv = sim->ubuf1;
+    f64rw visc = sim->ubuf2;
+
+    f64rw k1 = sim->ubuf3;
+    f64rw k2 = sim->ubuf4;
+    f64rw k3 = sim->ubuf5;
+    f64rw k4 = sim->ubuf6;
+
+    f64rw p = sim->p;
+    f64rw rhs = sim->pbuf1;
+
+    rk4_f(k1, un, conv, visc, 1.0, X, dx, K, nu);
+
+    field_add(k2, un, 0.5 * dt, k1, X);
+    rk4_f(k2, k2, conv, visc, 1.0, X, dx, K, nu);
+
+    field_add(k3, un, 0.5 * dt, k2, X);
+    rk4_f(k3, k3, conv, visc, 1.0, X, dx, K, nu);
+
+    field_add(k4, un, dt, k3, X);
+    rk4_f(k4, k4, conv, visc, 1.0, X, dx, K, nu);
+
+    rk4_combine_k(un, un, k1, k2, k3, k4, 0.166666666667 * dt, X);
+
+    rk4_pressure(un, un, p, rhs, X, dx, K);
+
+}
+
 void loop(simulation* sim, const size_t steps, const unsigned int write_interval) {
     connect_mmap(sim->X);
     for (unsigned int i = 0; i < steps; ++i) {
         step_EE(sim);
+        // step_RK4(sim);
         if (i % write_interval == 0) {
             write_u(sim->u, sim->X, i);
             printf("i: %d\n", i);
@@ -287,7 +369,7 @@ int main(int argc, char** argv) {
     init_u(sim.u, sim.X, 0.0001);
     init_p(sim.p, sim.X, 0.0001);
 
-    loop(&sim, 1000, 100);
+    loop(&sim, 5000, 50);
 
     return EXIT_SUCCESS;
 }
