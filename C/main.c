@@ -15,7 +15,6 @@
 #define at2d(M, i, j, c, X) ((M)[(i) * ((X) * 2) + (j) * (2) + (c)])
 #define at1d(M, i, j, X) ((M)[(i) * (X) + (j)])
 
-
 typedef struct {
 
     const double dx;
@@ -182,7 +181,7 @@ void pressure_jacobi(double* const u, double* const rhs, double* const p, double
     const double omega = 2.0 / (1.0 + sin(M_PI / (double)X));
     const double one_m_omega = 1.0 - omega;
 
-    const unsigned int iters = 50;
+    const unsigned int iters = 25;
 
     for (unsigned int iter = 0; iter < iters; ++iter) {
         for (size_t i = 1; i < X - 1; ++i) {
@@ -195,8 +194,7 @@ void pressure_jacobi(double* const u, double* const rhs, double* const p, double
     }
 }
 
-// TODO FIX OLD & BAD
-void pressure_GS(double* const u, double* const p, const size_t X, const double dx, const double K) {
+void pressure_GS(double* const u, double* const p,  double* const rhs, const size_t X, const double dx, const double K) {
     bcu(u, K, X);
     bcp(p, X);
 
@@ -205,13 +203,12 @@ void pressure_GS(double* const u, double* const p, const size_t X, const double 
     const double omega = 2.0 / (1.0 + sin(M_PI / (double)X));
     const double one_m_omega = 1.0 - omega;
 
-    const unsigned int iters = X;
+    const unsigned int iters = 25;
     for (unsigned int iter = 0; iter < iters; ++iter) {
         for (size_t i = 1; i < X - 1; ++i) {
             for (size_t j = 1; j < X - 1; ++j) {
-                const double rhs = ((at2d(u, i + 1, j, 0, X) - at2d(u, i - 1, j, 0, X) + at2d(u, i, j + 1, 1, X) - at2d(u, i, j - 1, 1, X)) / two_dx ) * d2;
                 at1d(p, i, j, X) = one_m_omega * at1d(p, i, j, X)
-                    + omega * (at1d(p, i + 1, j, X) + at1d(p, i - 1, j, X) + at1d(p, i, j + 1, X) + at1d(p, i, j - 1, X) - rhs) / 4.0;
+                    + omega * (at1d(p, i + 1, j, X) + at1d(p, i - 1, j, X) + at1d(p, i, j + 1, X) + at1d(p, i, j - 1, X) - at1d(rhs, i, j, X)) * 0.25;
             }
         }
     }
@@ -259,7 +256,8 @@ void step_EE(simulation* sim){
 
     assemble_u(sim->u, sim->u, sim->ubuf1, sim->ubuf2, sim->dt, sim->X);
     compute_pressure_rhs(sim->u, sim->pbuf1, sim->X, sim->dx);
-    pressure_jacobi(sim->u, sim->pbuf1, sim->p, sim->pbuf2, sim->X, sim->dx, sim->K);
+    // pressure_jacobi(sim->u, sim->pbuf1, sim->p, sim->pbuf2, sim->X, sim->dx, sim->K);
+    pressure_GS(sim->u, sim->p, sim->pbuf1, sim->X, sim->dx, sim->K);
 
     project_velocity(sim->u, sim->u, sim->p, sim->X, sim->dx, sim->K);
 
@@ -285,11 +283,11 @@ int main(int argc, char** argv) {
 
     printf("Starting simulation\n");
 
-    simulation sim = init_simulation(100.0, 0.001, 64, 1.0, 0);
-    init_u(sim.u, sim.X, 0.00001);
-    init_p(sim.p, sim.X, 0.00001);
+    simulation sim = init_simulation(100.0, 0.001, 129, 1.0, 0);
+    init_u(sim.u, sim.X, 0.0001);
+    init_p(sim.p, sim.X, 0.0001);
 
-    loop(&sim, 5000, 50);
+    loop(&sim, 1000, 100);
 
     return EXIT_SUCCESS;
 }

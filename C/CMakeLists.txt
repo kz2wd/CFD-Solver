@@ -10,3 +10,6 @@ target_sources(cldc
 )
 
 target_link_libraries(cldc m)
+
+target_compile_options(cldc PRIVATE -pg -g)
+target_link_options(cldc PRIVATE -pg)

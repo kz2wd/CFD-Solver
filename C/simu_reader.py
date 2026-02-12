@@ -1,14 +1,15 @@
 import mmap
 import struct
+import time
 
 import numpy as np
 import posix_ipc
 
-X = 64
+X = 129
 N = X * X * 2
 
-steps = 5000
-sample_interval = 50
+steps = 1000
+sample_interval = 100
 
 record_size = steps // sample_interval
 output_array = np.zeros((record_size, X, X, 2))
@@ -37,6 +38,7 @@ try:
             output_array[index] = frame
         if index >= record_size - 1:
             break
+        time.sleep(0.001)
 except KeyboardInterrupt:
     pass
 print("Saving run file")
