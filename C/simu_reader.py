@@ -7,8 +7,8 @@ import posix_ipc
 X = 64
 N = X * X * 2
 
-steps = 200
-sample_interval = 1
+steps = 5000
+sample_interval = 50
 
 record_size = steps // sample_interval
 output_array = np.zeros((record_size, X, X, 2))
@@ -31,7 +31,6 @@ try:
         if w > last:
             last = w
             frame = data.copy().reshape(X, X, 2)
-            print(frame.shape)
             print(f"reading step {w}, saving index {index}")
             print(f"stats: {frame.mean()}")
 

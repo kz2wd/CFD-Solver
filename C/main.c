@@ -223,7 +223,7 @@ void project_velocity(double* const u, double* const u_out, double* const p, con
     for (size_t i = 1; i < X - 1; ++i) {
         for (size_t j = 1; j < X - 1; ++j) {
             at2d(u_out, i, j, 0, X) = at2d(u, i, j, 0, X) - (at1d(p, i + 1, j, X) - at1d(p, i - 1, j, X)) / (2 * dx);
-            at2d(u_out, i, j, 1, X) = at2d(u, i, j, 0, X) - (at1d(p, i, j + 1, X) - at1d(p, i, j - 1, X)) / (2 * dx);
+            at2d(u_out, i, j, 1, X) = at2d(u, i, j, 1, X) - (at1d(p, i, j + 1, X) - at1d(p, i, j - 1, X)) / (2 * dx);
         }
     }
 }
@@ -268,11 +268,11 @@ void step_EE(simulation* sim){
 void loop(simulation* sim, const size_t steps, const unsigned int write_interval) {
     connect_mmap(sim->X);
     for (unsigned int i = 0; i < steps; ++i) {
-        printf("i: %d\n", i);
-        debug(sim->u, sim->X);
         step_EE(sim);
         if (i % write_interval == 0) {
             write_u(sim->u, sim->X, i);
+            printf("i: %d\n", i);
+            debug(sim->u, sim->X);
         }
     }
 }
@@ -285,11 +285,11 @@ int main(int argc, char** argv) {
 
     printf("Starting simulation\n");
 
-    simulation sim = init_simulation(100.0, 0.0001, 64, 1.0, 0);
+    simulation sim = init_simulation(100.0, 0.001, 64, 1.0, 0);
     init_u(sim.u, sim.X, 0.00001);
     init_p(sim.p, sim.X, 0.00001);
 
-    loop(&sim, 10, 1);
+    loop(&sim, 5000, 50);
 
     return EXIT_SUCCESS;
 }
