@@ -8,8 +8,8 @@ import posix_ipc
 X = 129
 N = X * X * 2
 
-steps = 5000
-sample_interval = 50
+steps = 10000
+sample_interval = 100
 
 record_size = steps // sample_interval
 output_array = np.zeros((record_size, X, X, 2))

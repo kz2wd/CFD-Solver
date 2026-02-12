@@ -186,6 +186,7 @@ void compute_pressure_rhs(f64ro u, f64rw rhs, const size_t X, const double dx) {
     }
 }
 
+// Not very jacobi... I dont use it anymore so I wont fix it for now
 void pressure_jacobi(f64rw u, f64ro rhs, f64rw p, f64rw pbuf, const size_t X, const double dx, const double K) {
     bcu(u, K, X);
     bcp(p, X);
@@ -260,8 +261,8 @@ void debug(f64ro u, const size_t X){
     printf("mean: %f\n", mean);
 }
 
-
-void field_add(f64rw out, f64ro a, cd b_factor, f64ro b, dim X) {
+// out != a != b
+void field_add(restrict f64rw out, restrict f64ro a, cd b_factor, restrict f64ro b, dim X) {
     for (size_t i = 1; i < X - 1; ++i) {
         for (size_t j = 1; j < X - 1; ++j) {
             at2d(out, i, j, 0, X) = at2d(a, i, j, 0, X) + b_factor * at2d(b, i, j, 0, X);
@@ -288,7 +289,7 @@ void step_EE(simulation* sim){
 void rk4_f(f64rw out, f64rw u, f64rw conv, f64rw visc, cd factor, dim X, cd dx, cd K, cd nu) {
     convection(u, conv, X, dx, K);
     viscous_drag(u, visc, nu, X, dx, K);
-    assemble_u(u, out, conv, visc, factor, X);
+    field_add(out, visc, -1.0, conv, X);
 }
 
 void rk4_combine_k(f64rw out, f64rw u, f64ro k1, f64ro k2, f64ro k3, f64ro k4, cd factor, dim X) {
@@ -347,8 +348,8 @@ void step_RK4(simulation* sim) {
 void loop(simulation* sim, const size_t steps, const unsigned int write_interval) {
     connect_mmap(sim->X);
     for (unsigned int i = 0; i < steps; ++i) {
-        step_EE(sim);
-        // step_RK4(sim);
+        // step_EE(sim);
+        step_RK4(sim);
         if (i % write_interval == 0) {
             write_u(sim->u, sim->X, i);
             printf("i: %d\n", i);
@@ -369,7 +370,7 @@ int main(int argc, char** argv) {
     init_u(sim.u, sim.X, 0.0001);
     init_p(sim.p, sim.X, 0.0001);
 
-    loop(&sim, 5000, 50);
+    loop(&sim, 10000, 100);
 
     return EXIT_SUCCESS;
 }

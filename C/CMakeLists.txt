@@ -11,5 +11,5 @@ target_sources(cldc
 
 target_link_libraries(cldc m)
 
-target_compile_options(cldc PRIVATE -pg -g)
+target_compile_options(cldc PRIVATE -pg -g -O3 -march=native -fopt-info-vec-optimized -fopt-info-vec-missed)
 target_link_options(cldc PRIVATE -pg)
