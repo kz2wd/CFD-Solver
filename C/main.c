@@ -9,6 +9,7 @@
 #include <stdatomic.h>
 #include <unistd.h>
 #include <time.h>
+#include <ini.h>
 
 #define UNUSED(X) (void)(X)
 
@@ -358,6 +359,56 @@ void loop(simulation* sim, const size_t steps, const unsigned int write_interval
     }
 }
 
+typedef struct {
+    double re;
+    int N;
+    int steps;
+    int sampling;
+    double K;
+    double dt;
+    char* scheme;
+} simulation_parameters;
+
+void clean_simulation_parameters(simulation_parameters* params) {
+    free(params->scheme);
+}
+
+static int handler(void* user, const char* section, const char* name, const char* value){
+    simulation_parameters* params = (simulation_parameters*)user;
+
+    #define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
+    if (MATCH("Simulation", "re")) {
+        params->re = atof(value);
+    } else if (MATCH("Simulation", "n")) {
+        params->N = atoi(value);
+    } else if (MATCH("Simulation", "steps")) {
+        params->steps = atoi(value);
+    } else if (MATCH("Simulation", "sampling")) {
+        params->sampling = atoi(value);
+    } else if (MATCH("Simulation", "k")) {
+        params->K = atof(value);
+    } else if (MATCH("Simulation", "dt")) {
+        params->dt = atof(value);
+    } else if (MATCH("Simulation", "scheme")) {
+        params->scheme = strdup(value);
+    } else {
+        return 0;
+    }
+    return 1;
+}
+
+
+
+simulation_parameters load_from_file(char* filepath) {
+    simulation_parameters params;
+
+    if (ini_parse(filepath, handler, &params) < 0) {
+        fprintf(stderr, "Could not read simulation parameters.");
+        exit(EXIT_FAILURE);
+    }
+
+    return params;
+}
 
 int main(int argc, char** argv) {
 
@@ -366,11 +417,13 @@ int main(int argc, char** argv) {
 
     printf("Starting simulation\n");
 
-    simulation sim = init_simulation(100.0, 0.001, 129, 1.0, 0);
+    simulation_parameters params = load_from_file("simulation.ini");
+    simulation sim = init_simulation(params.re, params.dt, params.N, params.K, 0);
     init_u(sim.u, sim.X, 0.0001);
     init_p(sim.p, sim.X, 0.0001);
 
-    loop(&sim, 10000, 100);
+    loop(&sim, params.steps, params.sampling);
 
+    clean_simulation_parameters(&params);
     return EXIT_SUCCESS;
 }

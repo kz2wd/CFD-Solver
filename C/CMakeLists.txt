@@ -9,7 +9,18 @@ target_sources(cldc
         main.c
 )
 
-target_link_libraries(cldc m)
+target_link_libraries(cldc PRIVATE
+    m
+    inih
+)
 
-target_compile_options(cldc PRIVATE -pg -g -O3 -march=native -fopt-info-vec-optimized -fopt-info-vec-missed)
+target_compile_options(cldc PRIVATE
+    -pg
+    -g
+    -O3
+    -march=native
+    -fopt-info-vec-optimized
+    -fopt-info-vec-missed
+)
+
 target_link_options(cldc PRIVATE -pg)
