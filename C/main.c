@@ -287,7 +287,7 @@ void step_EE(simulation* sim){
 }
 
 
-void rk4_f(f64rw out, f64rw u, f64rw conv, f64rw visc, cd factor, dim X, cd dx, cd K, cd nu) {
+void rk4_f(f64rw out, f64rw u, f64rw conv, f64rw visc, dim X, cd dx, cd K, cd nu) {
     convection(u, conv, X, dx, K);
     viscous_drag(u, visc, nu, X, dx, K);
     field_add(out, visc, -1.0, conv, X);
@@ -329,20 +329,86 @@ void step_RK4(simulation* sim) {
     f64rw p = sim->p;
     f64rw rhs = sim->pbuf1;
 
-    rk4_f(k1, un, conv, visc, 1.0, X, dx, K, nu);
+    rk4_f(k1, un, conv, visc, X, dx, K, nu);
 
     field_add(k2, un, 0.5 * dt, k1, X);
-    rk4_f(k2, k2, conv, visc, 1.0, X, dx, K, nu);
+    rk4_f(k2, k2, conv, visc, X, dx, K, nu);
 
     field_add(k3, un, 0.5 * dt, k2, X);
-    rk4_f(k3, k3, conv, visc, 1.0, X, dx, K, nu);
+    rk4_f(k3, k3, conv, visc, X, dx, K, nu);
 
     field_add(k4, un, dt, k3, X);
-    rk4_f(k4, k4, conv, visc, 1.0, X, dx, K, nu);
+    rk4_f(k4, k4, conv, visc, X, dx, K, nu);
 
     rk4_combine_k(un, un, k1, k2, k3, k4, 0.166666666667 * dt, X);
 
     rk4_pressure(un, un, p, rhs, X, dx, K);
+
+}
+
+void mult_field(f64rw out, f64rw in, cd factor, dim X) {
+    for (size_t i = 1; i < X - 1; ++i) {
+        for (size_t j = 1; j < X - 1; ++j) {
+            at2d(out, i, j, 0, X) = factor * at2d(in, i, j, 0, X);
+            at2d(out, i, j, 1, X) = factor * at2d(in, i, j, 1, X);
+        }
+    }
+
+}
+
+void imex_f(f64rw out, f64rw u, dim X, cd dx, cd K) {
+    convection(u, out, X, dx, K);
+    mult_field(out, out, -1.0, X);
+}
+
+// todo
+void imex_combine_k(f64rw out, f64rw u, f64ro k1, f64ro k2, f64ro k3, f64ro k4, cd factor, dim X) {
+    for (size_t i = 1; i < X - 1; ++i) {
+        for (size_t j = 1; j < X - 1; ++j) {
+            at2d(out, i, j, 0, X) = at2d(u, i, j, 0, X) + factor * (at2d(k1, i, j, 0, X) + 2.0 * at2d(k2, i, j, 0, X) + 2.0 * at2d(k3, i, j, 0, X) + at2d(k4, i, j, 0, X));
+            at2d(out, i, j, 1, X) = at2d(u, i, j, 1, X) + factor * (at2d(k1, i, j, 1, X) + 2.0 * at2d(k2, i, j, 1, X) + 2.0 * at2d(k3, i, j, 1, X) + at2d(k4, i, j, 1, X));
+        }
+    }
+}
+
+
+void step_IMEX(simulation* sim) {
+
+    dim X = sim->X;
+    cd dx = sim->dx;
+    cd K = sim->K;
+    cd nu = sim->nu;
+    cd dt = sim->dt;
+
+    f64rw un = sim->u;
+
+    f64rw conv = sim->ubuf1;
+    f64rw visc = sim->ubuf2;
+
+    f64rw k1 = sim->ubuf3;
+    f64rw k2 = sim->ubuf4;
+    f64rw k3 = sim->ubuf5;
+    f64rw k4 = sim->ubuf6;
+
+    f64rw p = sim->p;
+    f64rw rhs = sim->pbuf1;
+
+    imex_f(k1, un, X, dx, K);
+
+    field_add(k2, un, 0.5 * dt, k1, X);
+    imex_f(k2, k2, X, dx, K);
+
+    field_add(k3, un, 0.5 * dt, k2, X);
+    imex_f(k3, k3, X, dx, K);
+
+    field_add(k4, un, dt, k3, X);
+    imex_f(k4, k4, X, dx, K);
+
+    rk4_combine_k(un, un, k1, k2, k3, k4, 0.166666666667 * dt, X);
+
+    rk4_pressure(un, un, p, rhs, X, dx, K);
+
+    // now solve ADI CN
 
 }
 
