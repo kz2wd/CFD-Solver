@@ -1,4 +1,5 @@
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -39,6 +40,8 @@ typedef struct {
     f64rw ubuf6;
     f64rw pbuf1;
     f64rw pbuf2;
+    f64rw xbuf1;
+    f64rw xbuf2;
     // end compute var
     //
     const size_t X;
@@ -63,6 +66,8 @@ simulation init_simulation(const double re, const double dt, const size_t X, con
         .ubuf6 = (f64rw) calloc(X * X * 2, sizeof(double)),
         .pbuf1 = (f64rw) calloc(X * X, sizeof(double)),
         .pbuf2 = (f64rw) calloc(X * X, sizeof(double)),
+        .xbuf1 = (f64rw) calloc(X, sizeof(double)),
+        .xbuf2 = (f64rw) calloc(X, sizeof(double)),
         .X = X,
         .seed = seed,
     };
@@ -371,6 +376,45 @@ void imex_combine_k(f64rw out, f64rw u, f64ro k1, f64ro k2, f64ro k3, f64ro k4, 
     }
 }
 
+// https://en.wikipedia.org/wiki/Tridiagonal_matrix_algorithm
+// a lower diag, b mid diag, c upper diag
+// a_i x_i-1 + b_i x_i + c_i x_i+1 = d_i
+//
+// here a = c; a, b, c constant
+void thomas_algorithm(f64rw out, cd a, cd b, f64ro d, f64rw cprime, f64rw dprime, dim X) {
+    cprime[0] = a / b;
+    dprime[0] = d[0] / b;
+
+    for (int i = 1; i < X; ++i) {
+        cprime[i] = a / (b - a * cprime[i - 1]);
+        dprime[i] = (d[i] - a * dprime[i - 1]) / (b - a * cprime[i - 1]);
+    }
+
+    out[X - 1] = dprime[X - 1];
+    for (int i = X - 2 ; i >= 0; --i) {
+        out[i] = dprime[i] - cprime[i] * out[i + 1];
+    }
+}
+
+// Euler Implicit
+// (I - νΔt ∇2) un+1 = un
+// A X = B
+// Euler Implicit ADI
+// (I - νΔt ∂xx)(I - νΔt ∂yy) un+1 = un
+void ei_adi(f64rw out, f64rw u, f64rw inter_u, f64rw xbuf1, f64rw xbuf2, dim X, cd K, cd dx, cd nu, cd dt) {
+    cd a = 1 * nu * dt / (dx * dx);
+    cd b = -4 * nu * dt / (dx * dx);
+
+    bcu(u, K, X);
+    for (int i = 0; i < X; ++i) {
+        thomas_algorithm(&at2d(inter_u, i, 0, 0, X), -a, 1 + b, &at2d(u, i, 0, 0, X), xbuf1, xbuf2, X);
+    }
+
+    bcu(inter_u, K, X);
+    for (int j = 0; j < X; ++j) {
+        thomas_algorithm(&at2d(out, 0, j, 1, X), -a, 1 + b, &at2d(inter_u, 0, j, 1, X), xbuf1, xbuf2, X);
+    }
+}
 
 void step_IMEX(simulation* sim) {
 
@@ -382,7 +426,7 @@ void step_IMEX(simulation* sim) {
 
     f64rw un = sim->u;
 
-    f64rw conv = sim->ubuf1;
+    f64rw visc_buf = sim->ubuf1;
     f64rw visc = sim->ubuf2;
 
     f64rw k1 = sim->ubuf3;
@@ -392,6 +436,9 @@ void step_IMEX(simulation* sim) {
 
     f64rw p = sim->p;
     f64rw rhs = sim->pbuf1;
+
+    f64rw x1 = sim->xbuf1;
+    f64rw x2 = sim->xbuf2;
 
     imex_f(k1, un, X, dx, K);
 
@@ -408,7 +455,12 @@ void step_IMEX(simulation* sim) {
 
     rk4_pressure(un, un, p, rhs, X, dx, K);
 
-    // now solve ADI CN
+    // now solve EI ADI
+
+    ei_adi(visc, un, visc_buf, x1, x2, X, K, dx, nu, dt);
+
+    // Reapply pressure
+    rk4_pressure(un, visc, p, rhs, X, dx, K);
 
 }
 
@@ -416,7 +468,8 @@ void loop(simulation* sim, const size_t steps, const unsigned int write_interval
     connect_mmap(sim->X);
     for (unsigned int i = 0; i < steps; ++i) {
         // step_EE(sim);
-        step_RK4(sim);
+        // step_RK4(sim);
+        step_IMEX(sim);
         if (i % write_interval == 0) {
             write_u(sim->u, sim->X, i);
             printf("i: %d\n", i);
