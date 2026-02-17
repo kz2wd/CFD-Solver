@@ -267,8 +267,7 @@ void debug(f64ro u, const size_t X){
     printf("mean: %f\n", mean);
 }
 
-// out != a != b
-void field_add(restrict f64rw out, restrict f64ro a, cd b_factor, restrict f64ro b, dim X) {
+void field_add(f64rw out, f64ro a, cd b_factor, f64ro b, dim X) {
     for (size_t i = 1; i < X - 1; ++i) {
         for (size_t j = 1; j < X - 1; ++j) {
             at2d(out, i, j, 0, X) = at2d(a, i, j, 0, X) + b_factor * at2d(b, i, j, 0, X);
@@ -307,7 +306,7 @@ void rk4_combine_k(f64rw out, f64rw u, f64ro k1, f64ro k2, f64ro k3, f64ro k4, c
     }
 }
 
-void rk4_pressure(f64rw out, f64rw u, f64rw p, f64rw rhs, dim X, cd dx, cd K) {
+void apply_pressure(f64rw out, f64rw u, f64rw p, f64rw rhs, dim X, cd dx, cd K) {
     compute_pressure_rhs(u, rhs, X, dx);
     pressure_GS(u, p, rhs, X, dx, K);
     project_velocity(u, out, p, X, dx, K);
@@ -347,7 +346,7 @@ void step_RK4(simulation* sim) {
 
     rk4_combine_k(un, un, k1, k2, k3, k4, 0.166666666667 * dt, X);
 
-    rk4_pressure(un, un, p, rhs, X, dx, K);
+    apply_pressure(un, un, p, rhs, X, dx, K);
 
 }
 
@@ -363,17 +362,8 @@ void mult_field(f64rw out, f64rw in, cd factor, dim X) {
 
 void imex_f(f64rw out, f64rw u, dim X, cd dx, cd K) {
     convection(u, out, X, dx, K);
+    // field_add(out, u, -1.0 * dt, out, X);
     mult_field(out, out, -1.0, X);
-}
-
-// todo
-void imex_combine_k(f64rw out, f64rw u, f64ro k1, f64ro k2, f64ro k3, f64ro k4, cd factor, dim X) {
-    for (size_t i = 1; i < X - 1; ++i) {
-        for (size_t j = 1; j < X - 1; ++j) {
-            at2d(out, i, j, 0, X) = at2d(u, i, j, 0, X) + factor * (at2d(k1, i, j, 0, X) + 2.0 * at2d(k2, i, j, 0, X) + 2.0 * at2d(k3, i, j, 0, X) + at2d(k4, i, j, 0, X));
-            at2d(out, i, j, 1, X) = at2d(u, i, j, 1, X) + factor * (at2d(k1, i, j, 1, X) + 2.0 * at2d(k2, i, j, 1, X) + 2.0 * at2d(k3, i, j, 1, X) + at2d(k4, i, j, 1, X));
-        }
-    }
 }
 
 // https://en.wikipedia.org/wiki/Tridiagonal_matrix_algorithm
@@ -381,38 +371,42 @@ void imex_combine_k(f64rw out, f64rw u, f64ro k1, f64ro k2, f64ro k3, f64ro k4, 
 // a_i x_i-1 + b_i x_i + c_i x_i+1 = d_i
 //
 // here a = c; a, b, c constant
-void thomas_algorithm(f64rw out, cd a, cd b, f64ro d, f64rw cprime, f64rw dprime, dim X) {
+void thomas_algorithm(f64rw out, cd a, cd b, f64ro d, f64rw cprime, f64rw dprime, dim X, dim ld) {
     cprime[0] = a / b;
-    dprime[0] = d[0] / b;
+    dprime[0] = d[0 * ld] / b;
 
     for (int i = 1; i < X; ++i) {
         cprime[i] = a / (b - a * cprime[i - 1]);
-        dprime[i] = (d[i] - a * dprime[i - 1]) / (b - a * cprime[i - 1]);
+        dprime[i] = (d[i * ld] - a * dprime[i - 1]) / (b - a * cprime[i - 1]);
     }
 
-    out[X - 1] = dprime[X - 1];
+    out[(X - 1) * ld] = dprime[X - 1];
     for (int i = X - 2 ; i >= 0; --i) {
-        out[i] = dprime[i] - cprime[i] * out[i + 1];
+        out[i * ld] = dprime[i] - cprime[i] * out[(i + 1) * ld];
     }
 }
 
-// Euler Implicit
+// Helmholtz solve with alpha = 1, beta = nu dt
+// Implicit Euler
 // (I - νΔt ∇2) un+1 = un
 // A X = B
-// Euler Implicit ADI
+// Implicit Euler ADI
 // (I - νΔt ∂xx)(I - νΔt ∂yy) un+1 = un
-void ei_adi(f64rw out, f64rw u, f64rw inter_u, f64rw xbuf1, f64rw xbuf2, dim X, cd K, cd dx, cd nu, cd dt) {
+void ie_adi(f64rw out, f64rw u, f64rw inter_u, f64rw xbuf1, f64rw xbuf2, dim X, cd K, cd dx, cd nu, cd dt) {
     cd a = 1 * nu * dt / (dx * dx);
-    cd b = -4 * nu * dt / (dx * dx);
+    cd b = -2 * nu * dt / (dx * dx);
 
     bcu(u, K, X);
-    for (int i = 0; i < X; ++i) {
-        thomas_algorithm(&at2d(inter_u, i, 0, 0, X), -a, 1 + b, &at2d(u, i, 0, 0, X), xbuf1, xbuf2, X);
+    for (int j = 0; j < X; ++j) {
+        // when changing column, leading dimension is (X) * 2
+        thomas_algorithm(&at2d(inter_u, 0, j, 0, X), -a, 1 + b, &at2d(u, 0, j, 0, X), xbuf1, xbuf2, X, (X) * 2);
+        thomas_algorithm(&at2d(inter_u, 0, j, 1, X), -a, 1 + b, &at2d(u, 0, j, 1, X), xbuf1, xbuf2, X, (X) * 2);
     }
 
     bcu(inter_u, K, X);
-    for (int j = 0; j < X; ++j) {
-        thomas_algorithm(&at2d(out, 0, j, 1, X), -a, 1 + b, &at2d(inter_u, 0, j, 1, X), xbuf1, xbuf2, X);
+    for (int i = 0; i < X; ++i) {
+        thomas_algorithm(&at2d(out, i, 0, 0, X), -a, 1 + b, &at2d(inter_u, i, 0, 0, X), xbuf1, xbuf2, X, 2);
+        thomas_algorithm(&at2d(out, i, 0, 1, X), -a, 1 + b, &at2d(inter_u, i, 0, 1, X), xbuf1, xbuf2, X, 2);
     }
 }
 
@@ -453,14 +447,17 @@ void step_IMEX(simulation* sim) {
 
     rk4_combine_k(un, un, k1, k2, k3, k4, 0.166666666667 * dt, X);
 
-    rk4_pressure(un, un, p, rhs, X, dx, K);
+    apply_pressure(un, un, p, rhs, X, dx, K);
 
     // now solve EI ADI
 
-    ei_adi(visc, un, visc_buf, x1, x2, X, K, dx, nu, dt);
+    ie_adi(visc, un, visc_buf, x1, x2, X, K, dx, nu, dt);
+
+    // ie_adi(u_tild, u_star, visc_buf, x1, x2, X, K, dx, nu, dt);
 
     // Reapply pressure
-    rk4_pressure(un, visc, p, rhs, X, dx, K);
+    apply_pressure(un, visc, p, rhs, X, dx, K);
+
 
 }
 
