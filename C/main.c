@@ -360,10 +360,10 @@ void mult_field(f64rw out, f64rw in, cd factor, dim X) {
 
 }
 
-void imex_f(f64rw out, f64rw u, dim X, cd dx, cd K) {
-    convection(u, out, X, dx, K);
+void imex_f(f64rw out, f64rw u, f64rw conv_buf, dim X, cd dx, cd K) {
+    convection(u, conv_buf, X, dx, K);
     // field_add(out, u, -1.0 * dt, out, X);
-    mult_field(out, out, -1.0, X);
+    mult_field(out, conv_buf, -1.0, X);
 }
 
 // https://en.wikipedia.org/wiki/Tridiagonal_matrix_algorithm
@@ -399,14 +399,14 @@ void ie_adi(f64rw out, f64rw u, f64rw inter_u, f64rw xbuf1, f64rw xbuf2, dim X, 
     bcu(u, K, X);
     for (int j = 0; j < X; ++j) {
         // when changing column, leading dimension is (X) * 2
-        thomas_algorithm(&at2d(inter_u, 0, j, 0, X), -a, 1 + b, &at2d(u, 0, j, 0, X), xbuf1, xbuf2, X, (X) * 2);
-        thomas_algorithm(&at2d(inter_u, 0, j, 1, X), -a, 1 + b, &at2d(u, 0, j, 1, X), xbuf1, xbuf2, X, (X) * 2);
+        thomas_algorithm(&at2d(inter_u, 0, j, 0, X), -a, 1 - b, &at2d(u, 0, j, 0, X), xbuf1, xbuf2, X, (X) * 2);
+        thomas_algorithm(&at2d(inter_u, 0, j, 1, X), -a, 1 - b, &at2d(u, 0, j, 1, X), xbuf1, xbuf2, X, (X) * 2);
     }
 
     bcu(inter_u, K, X);
     for (int i = 0; i < X; ++i) {
-        thomas_algorithm(&at2d(out, i, 0, 0, X), -a, 1 + b, &at2d(inter_u, i, 0, 0, X), xbuf1, xbuf2, X, 2);
-        thomas_algorithm(&at2d(out, i, 0, 1, X), -a, 1 + b, &at2d(inter_u, i, 0, 1, X), xbuf1, xbuf2, X, 2);
+        thomas_algorithm(&at2d(out, i, 0, 0, X), -a, 1 - b, &at2d(inter_u, i, 0, 0, X), xbuf1, xbuf2, X, 2);
+        thomas_algorithm(&at2d(out, i, 0, 1, X), -a, 1 - b, &at2d(inter_u, i, 0, 1, X), xbuf1, xbuf2, X, 2);
     }
 }
 
@@ -420,7 +420,7 @@ void step_IMEX(simulation* sim) {
 
     f64rw un = sim->u;
 
-    f64rw visc_buf = sim->ubuf1;
+    f64rw ubuf1 = sim->ubuf1;
     f64rw visc = sim->ubuf2;
 
     f64rw k1 = sim->ubuf3;
@@ -434,16 +434,16 @@ void step_IMEX(simulation* sim) {
     f64rw x1 = sim->xbuf1;
     f64rw x2 = sim->xbuf2;
 
-    imex_f(k1, un, X, dx, K);
-
+    imex_f(k1, un, ubuf1, X, dx, K);
     field_add(k2, un, 0.5 * dt, k1, X);
-    imex_f(k2, k2, X, dx, K);
+
+    imex_f(k2, k2, ubuf1, X, dx, K);
 
     field_add(k3, un, 0.5 * dt, k2, X);
-    imex_f(k3, k3, X, dx, K);
+    imex_f(k3, k3, ubuf1, X, dx, K);
 
     field_add(k4, un, dt, k3, X);
-    imex_f(k4, k4, X, dx, K);
+    imex_f(k4, k4, ubuf1, X, dx, K);
 
     rk4_combine_k(un, un, k1, k2, k3, k4, 0.166666666667 * dt, X);
 
@@ -451,7 +451,7 @@ void step_IMEX(simulation* sim) {
 
     // now solve EI ADI
 
-    ie_adi(visc, un, visc_buf, x1, x2, X, K, dx, nu, dt);
+    ie_adi(visc, un, ubuf1, x1, x2, X, K, dx, nu, dt);
 
     // ie_adi(u_tild, u_star, visc_buf, x1, x2, X, K, dx, nu, dt);
 
