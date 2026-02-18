@@ -38,10 +38,13 @@ typedef struct {
     f64rw ubuf4;
     f64rw ubuf5;
     f64rw ubuf6;
+    f64rw ubuf7;
     f64rw pbuf1;
     f64rw pbuf2;
     f64rw xbuf1;
     f64rw xbuf2;
+
+    f64rw udebug1;
     // end compute var
     //
     const size_t X;
@@ -64,10 +67,12 @@ simulation init_simulation(const double re, const double dt, const size_t X, con
         .ubuf4 = (f64rw) calloc(X * X * 2, sizeof(double)),
         .ubuf5 = (f64rw) calloc(X * X * 2, sizeof(double)),
         .ubuf6 = (f64rw) calloc(X * X * 2, sizeof(double)),
+        .ubuf7 = (f64rw) calloc(X * X * 2, sizeof(double)),
         .pbuf1 = (f64rw) calloc(X * X, sizeof(double)),
         .pbuf2 = (f64rw) calloc(X * X, sizeof(double)),
         .xbuf1 = (f64rw) calloc(X, sizeof(double)),
         .xbuf2 = (f64rw) calloc(X, sizeof(double)),
+        .udebug1 = (f64rw) calloc(X * X * 2, sizeof(double)),
         .X = X,
         .seed = seed,
     };
@@ -221,7 +226,7 @@ void pressure_GS(f64rw u, f64rw p, f64ro rhs, const size_t X, const double dx, c
     const double omega = 2.0 / (1.0 + sin(M_PI / (double)X));
     const double one_m_omega = 1.0 - omega;
 
-    const unsigned int iters = 25;
+    const unsigned int iters = X;
     for (unsigned int iter = 0; iter < iters; ++iter) {
         for (size_t i = 1; i < X - 1; ++i) {
             for (size_t j = 1; j < X - 1; ++j) {
@@ -250,6 +255,44 @@ void assemble_u(f64ro u, f64rw u_out, f64ro conv, f64ro visc, cd factor, const s
             at2d(u_out, i, j, 1, X) =  at2d(u, i, j, 1, X) + factor * (-at2d(conv, i, j, 1, X) + at2d(visc, i, j, 1, X));
         }
     }
+}
+
+void compute_divergence(f64rw out, f64ro u, dim X, cd dx) {
+    for (size_t i = 1; i < X - 1; ++i) {
+        for (size_t j = 1; j < X - 1; ++j) {
+            at2d(out, i, j, 0, X) = (at2d(u, i + 1, j, 0, X) - at2d(u, i - 1, j, 0, X)) / 2 * dx;
+            at2d(out, i, j, 1, X) = (at2d(u, i, j + 1, 1, X) - at2d(u, i, j - 1, 1, X)) / 2 * dx;
+        }
+    }
+}
+
+void debug_apply_bcu(f64rw target, char* label, simulation* sim) {
+    dim X = sim->X;
+    cd dx = sim->dx;
+
+    f64rw divergence = sim->udebug1;
+    compute_divergence(divergence, target, X, dx);
+    double mean = 0.0;
+    double min = 0.0;
+    double max = 0.0;
+    for (size_t i = 1; i < X - 1; ++i) {
+        for (size_t j = 1; j < X - 1; ++j) {
+            cd u = at2d(divergence, i, j, 0, X);
+            cd v = at2d(divergence, i, j, 1, X);
+            cd norm = sqrt(u * u + v * v);
+            if (norm < min) {
+                min = norm;
+            }
+            if (norm > max) {
+                max = norm;
+            }
+            mean += norm;
+        }
+    }
+
+    mean /= (X * X);
+    printf("Divergence %s : min|avg|max %.3f %.3f %.3f\n", label, min, mean, max);
+
 }
 
 void debug(f64ro u, const size_t X){
@@ -397,18 +440,69 @@ void ie_adi(f64rw out, f64rw u, f64rw inter_u, f64rw xbuf1, f64rw xbuf2, dim X, 
     cd b = -2 * nu * dt / (dx * dx);
 
     bcu(u, K, X);
-    for (int j = 0; j < X; ++j) {
+    for (int j = 1; j < X - 1; ++j) {
         // when changing column, leading dimension is (X) * 2
         thomas_algorithm(&at2d(inter_u, 0, j, 0, X), -a, 1 - b, &at2d(u, 0, j, 0, X), xbuf1, xbuf2, X, (X) * 2);
         thomas_algorithm(&at2d(inter_u, 0, j, 1, X), -a, 1 - b, &at2d(u, 0, j, 1, X), xbuf1, xbuf2, X, (X) * 2);
     }
 
     bcu(inter_u, K, X);
-    for (int i = 0; i < X; ++i) {
+    for (int i = 1; i < X - 1; ++i) {
         thomas_algorithm(&at2d(out, i, 0, 0, X), -a, 1 - b, &at2d(inter_u, i, 0, 0, X), xbuf1, xbuf2, X, 2);
         thomas_algorithm(&at2d(out, i, 0, 1, X), -a, 1 - b, &at2d(inter_u, i, 0, 1, X), xbuf1, xbuf2, X, 2);
     }
 }
+
+// expects bcu already applied
+// computes: out = u + factor * (u,yy)
+void u_plus_dyy(f64rw out, f64ro u, cd factor, dim X, cd dx) {
+    cd inner_factor = factor * 1.0 / (dx * dx);
+    for (size_t i = 1; i < X - 1; ++i) {
+        for (size_t j = 1; j < X - 1; ++j) {
+            at2d(out, i, j, 0, X) = at2d(u, i, j, 0, X) + inner_factor * (at2d(u, i, j + 1, 0, X) + at2d(u, i, j - 1, 0, X) - 2 * at2d(u, i, j, 0, X));
+            at2d(out, i, j, 1, X) = at2d(u, i, j, 1, X) + inner_factor * (at2d(u, i, j + 1, 1, X) + at2d(u, i, j - 1, 1, X) - 2 * at2d(u, i, j, 1, X));
+        }
+    }
+}
+
+// expects bcu already applied
+// computes: out = u + factor * (u,xx)
+void u_plus_dxx(f64rw out, f64ro u, cd factor, dim X, cd dx) {
+    cd inner_factor = factor * 1.0 / (dx * dx);
+    for (size_t i = 1; i < X - 1; ++i) {
+        for (size_t j = 1; j < X - 1; ++j) {
+            at2d(out, i, j, 0, X) = at2d(u, i, j, 0, X) + inner_factor * (at2d(u, i + 1, j, 0, X) + at2d(u, i - 1, j, 0, X) - 2 * at2d(u, i, j, 0, X));
+            at2d(out, i, j, 1, X) = at2d(u, i, j, 1, X) + inner_factor * (at2d(u, i + 1, j, 1, X) + at2d(u, i - 1, j, 1, X) - 2 * at2d(u, i, j, 1, X));
+        }
+    }
+}
+
+
+void cn_adi(f64rw out, f64rw u, f64rw inter_u, f64rw deri_buf, f64rw xbuf1, f64rw xbuf2, dim X, cd K, cd dx, cd nu, cd dt) {
+    cd theta = 0.5;
+    cd a = 1 * theta * nu * dt / (dx * dx);
+    cd b = -2 * theta * nu * dt / (dx * dx);
+
+    bcu(u, K, X);
+    // u[:, j, 0] => u[:, j] + 1/2 * self.dt * self.nu * ((u[:, j+1] - 2 * u[:, j] + u[:, j-1]) / self.dy**2)
+    // &at2d(u, 0, j, 0, X) => dyy func
+    u_plus_dyy(deri_buf, u, theta * nu * dt, X, dx);
+    bcu(deri_buf, K, X);
+    for (int j = 1; j < X - 1; ++j) {
+        // when changing column, leading dimension is (X) * 2
+        thomas_algorithm(&at2d(inter_u, 0, j, 0, X), -a, 1 - b, &at2d(deri_buf, 0, j, 0, X), xbuf1, xbuf2, X, (X) * 2);
+        thomas_algorithm(&at2d(inter_u, 0, j, 1, X), -a, 1 - b, &at2d(deri_buf, 0, j, 1, X), xbuf1, xbuf2, X, (X) * 2);
+    }
+
+    bcu(inter_u, K, X);
+    u_plus_dxx(deri_buf, inter_u, theta * nu * dt, X, dx);
+    bcu(deri_buf, K, X);
+    for (int i = 1; i < X - 1; ++i) {
+        thomas_algorithm(&at2d(out, i, 0, 0, X), -a, 1 - b, &at2d(deri_buf, i, 0, 0, X), xbuf1, xbuf2, X, 2);
+        thomas_algorithm(&at2d(out, i, 0, 1, X), -a, 1 - b, &at2d(deri_buf, i, 0, 1, X), xbuf1, xbuf2, X, 2);
+    }
+}
+
 
 void step_IMEX(simulation* sim) {
 
@@ -427,6 +521,7 @@ void step_IMEX(simulation* sim) {
     f64rw k2 = sim->ubuf4;
     f64rw k3 = sim->ubuf5;
     f64rw k4 = sim->ubuf6;
+    f64rw deriv_buf = sim->ubuf7;
 
     f64rw p = sim->p;
     f64rw rhs = sim->pbuf1;
@@ -451,13 +546,11 @@ void step_IMEX(simulation* sim) {
 
     // now solve EI ADI
 
-    ie_adi(visc, un, ubuf1, x1, x2, X, K, dx, nu, dt);
-
-    // ie_adi(u_tild, u_star, visc_buf, x1, x2, X, K, dx, nu, dt);
+    // ie_adi(visc, un, ubuf1, x1, x2, X, K, dx, nu, dt);
+    cn_adi(visc, un, ubuf1, deriv_buf, x1, x2, X, K, dx, nu, dt);
 
     // Reapply pressure
     apply_pressure(un, visc, p, rhs, X, dx, K);
-
 
 }
 
