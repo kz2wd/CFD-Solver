@@ -237,6 +237,28 @@ void pressure_GS(f64rw u, f64rw p, f64ro rhs, const size_t X, const double dx, c
     }
 }
 
+// Multi grid pressure solve
+void pressure_MG(f64rw u, f64rw p, f64ro rhs, const size_t X, const double dx, const double K) {
+    bcu(u, K, X);
+    bcp(p, X);
+
+    const double two_dx = 2 * dx;
+    const double d2 = dx * dx;
+    const double omega = 2.0 / (1.0 + sin(M_PI / (double)X));
+    const double one_m_omega = 1.0 - omega;
+
+    const unsigned int iters = X;
+    for (unsigned int iter = 0; iter < iters; ++iter) {
+        for (size_t i = 1; i < X - 1; ++i) {
+            for (size_t j = 1; j < X - 1; ++j) {
+                at1d(p, i, j, X) = one_m_omega * at1d(p, i, j, X)
+                    + omega * (at1d(p, i + 1, j, X) + at1d(p, i - 1, j, X) + at1d(p, i, j + 1, X) + at1d(p, i, j - 1, X) - at1d(rhs, i, j, X)) * 0.25;
+            }
+        }
+    }
+}
+
+
 void project_velocity(f64rw u, f64rw u_out, double* const p, const size_t X, const double dx, const double K) {
     bcu(u, K, X);
     bcp(p, X);
