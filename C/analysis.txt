@@ -1,0 +1,256 @@
+Flat profile:
+
+Each sample counts as 0.01 seconds.
+  %   cumulative   self              self     total           
+ time   seconds   seconds    calls  ms/call  ms/call  name    
+ 82.12     20.30    20.30    10000     2.03     2.03  pressure_jacobi
+  5.74     21.72     1.42    40000     0.04     0.04  convection
+  2.87     22.43     0.71    10000     0.07     0.07  viscous_drag
+  1.70     22.85     0.42                             project_velocity
+  1.62     23.25     0.40                             debug
+  1.46     23.61     0.36                             rk4_combine_k
+  1.38     23.95     0.34                             rk4_f
+  1.38     24.29     0.34                             step_EE
+  0.97     24.53     0.24    10000     0.02     0.06  field_add
+  0.40     24.63     0.10                             compute_pressure_rhs
+  0.24     24.69     0.06    60000     0.00     0.00  bcu
+  0.08     24.71     0.02                             bcp
+  0.04     24.72     0.01        2     5.00   312.50  step_RK4
+  0.00     24.72     0.00   100000     0.00     0.00  init_u
+  0.00     24.72     0.00    10000     0.00     0.00  compute_divergence
+  0.00     24.72     0.00    10000     0.00     0.00  pressure_GS
+  0.00     24.72     0.00        1     0.00     0.00  init_simulation
+  0.00     24.72     0.00        1     0.00     0.00  thomas_algorithm.constprop.0
+  0.00     24.72     0.00        1     0.00     0.00  write_u
+
+ %         the percentage of the total running time of the
+time       program used by this function.
+
+cumulative a running sum of the number of seconds accounted
+ seconds   for by this function and those listed above it.
+
+ self      the number of seconds accounted for by this
+seconds    function alone.  This is the major sort for this
+           listing.
+
+calls      the number of times this function was invoked, if
+           this function is profiled, else blank.
+
+ self      the average number of milliseconds spent in this
+ms/call    function per call, if this function is profiled,
+	   else blank.
+
+ total     the average number of milliseconds spent in this
+ms/call    function and its descendents per call, if this
+	   function is profiled, else blank.
+
+name       the name of the function.  This is the minor sort
+           for this listing. The index shows the location of
+	   the function in the gprof listing. If the index is
+	   in parenthesis it shows where it would appear in
+	   the gprof listing if it were to be printed.
+
+Copyright (C) 2012-2025 Free Software Foundation, Inc.
+
+Copying and distribution of this file, with or without modification,
+are permitted in any medium without royalty provided the copyright
+notice and this notice are preserved.
+
+		     Call graph (explanation follows)
+
+
+granularity: each sample hit covers 4 byte(s) for 0.04% of 24.72 seconds
+
+index % time    self  children    called     name
+                                                 <spontaneous>
+[1]     88.0    0.36   21.39                 rk4_combine_k [1]
+               20.30    0.01   10000/10000       pressure_jacobi [2]
+                0.71    0.00   10000/10000       viscous_drag [4]
+                0.35    0.00   10000/40000       convection [3]
+                0.01    0.00   10000/60000       bcu [13]
+                0.00    0.00   10000/10000       compute_divergence [17]
+-----------------------------------------------
+               20.30    0.01   10000/10000       rk4_combine_k [1]
+[2]     82.2   20.30    0.01   10000         pressure_jacobi [2]
+                0.01    0.00   10000/60000       bcu [13]
+                0.00    0.00   10000/100000      init_u [16]
+-----------------------------------------------
+                0.35    0.00   10000/40000       field_add [9]
+                0.35    0.00   10000/40000       step_EE [6]
+                0.35    0.00   10000/40000       rk4_f [5]
+                0.35    0.00   10000/40000       rk4_combine_k [1]
+[3]      5.7    1.42    0.00   40000         convection [3]
+                0.00    0.00   40000/100000      init_u [16]
+-----------------------------------------------
+                0.71    0.00   10000/10000       rk4_combine_k [1]
+[4]      2.9    0.71    0.00   10000         viscous_drag [4]
+-----------------------------------------------
+                                                 <spontaneous>
+[5]      2.9    0.34    0.36                 rk4_f [5]
+                0.35    0.00   10000/40000       convection [3]
+                0.01    0.00   10000/60000       bcu [13]
+-----------------------------------------------
+                                                 <spontaneous>
+[6]      2.9    0.34    0.36                 step_EE [6]
+                0.35    0.00   10000/40000       convection [3]
+                0.01    0.00   10000/60000       bcu [13]
+-----------------------------------------------
+                0.01    0.61       2/2           main [8]
+[7]      2.5    0.01    0.61       2         step_RK4 [7]
+                0.24    0.36   10000/10000       field_add [9]
+                0.00    0.01   10000/10000       pressure_GS [15]
+-----------------------------------------------
+                                                 <spontaneous>
+[8]      2.5    0.00    0.62                 main [8]
+                0.01    0.61       2/2           step_RK4 [7]
+                0.00    0.00       1/1           thomas_algorithm.constprop.0 [19]
+                0.00    0.00       1/1           init_simulation [18]
+                0.00    0.00       1/1           write_u [20]
+-----------------------------------------------
+                0.24    0.36   10000/10000       step_RK4 [7]
+[9]      2.4    0.24    0.36   10000         field_add [9]
+                0.35    0.00   10000/40000       convection [3]
+                0.01    0.00   10000/60000       bcu [13]
+-----------------------------------------------
+                                                 <spontaneous>
+[10]     1.7    0.42    0.00                 project_velocity [10]
+-----------------------------------------------
+                                                 <spontaneous>
+[11]     1.6    0.40    0.00                 debug [11]
+-----------------------------------------------
+                                                 <spontaneous>
+[12]     0.4    0.10    0.00                 compute_pressure_rhs [12]
+-----------------------------------------------
+                0.01    0.00   10000/60000       pressure_jacobi [2]
+                0.01    0.00   10000/60000       pressure_GS [15]
+                0.01    0.00   10000/60000       field_add [9]
+                0.01    0.00   10000/60000       step_EE [6]
+                0.01    0.00   10000/60000       rk4_f [5]
+                0.01    0.00   10000/60000       rk4_combine_k [1]
+[13]     0.2    0.06    0.00   60000         bcu [13]
+                0.00    0.00   40000/100000      init_u [16]
+-----------------------------------------------
+                                                 <spontaneous>
+[14]     0.1    0.02    0.00                 bcp [14]
+-----------------------------------------------
+                0.00    0.01   10000/10000       step_RK4 [7]
+[15]     0.0    0.00    0.01   10000         pressure_GS [15]
+                0.01    0.00   10000/60000       bcu [13]
+                0.00    0.00   10000/100000      init_u [16]
+-----------------------------------------------
+                0.00    0.00   10000/100000      pressure_jacobi [2]
+                0.00    0.00   10000/100000      pressure_GS [15]
+                0.00    0.00   40000/100000      bcu [13]
+                0.00    0.00   40000/100000      convection [3]
+[16]     0.0    0.00    0.00  100000         init_u [16]
+-----------------------------------------------
+                0.00    0.00   10000/10000       rk4_combine_k [1]
+[17]     0.0    0.00    0.00   10000         compute_divergence [17]
+-----------------------------------------------
+                0.00    0.00       1/1           main [8]
+[18]     0.0    0.00    0.00       1         init_simulation [18]
+-----------------------------------------------
+                0.00    0.00       1/1           main [8]
+[19]     0.0    0.00    0.00       1         thomas_algorithm.constprop.0 [19]
+-----------------------------------------------
+                0.00    0.00       1/1           main [8]
+[20]     0.0    0.00    0.00       1         write_u [20]
+-----------------------------------------------
+
+ This table describes the call tree of the program, and was sorted by
+ the total amount of time spent in each function and its children.
+
+ Each entry in this table consists of several lines.  The line with the
+ index number at the left hand margin lists the current function.
+ The lines above it list the functions that called this function,
+ and the lines below it list the functions this one called.
+ This line lists:
+     index	A unique number given to each element of the table.
+		Index numbers are sorted numerically.
+		The index number is printed next to every function name so
+		it is easier to look up where the function is in the table.
+
+     % time	This is the percentage of the `total' time that was spent
+		in this function and its children.  Note that due to
+		different viewpoints, functions excluded by options, etc,
+		these numbers will NOT add up to 100%.
+
+     self	This is the total amount of time spent in this function.
+
+     children	This is the total amount of time propagated into this
+		function by its children.
+
+     called	This is the number of times the function was called.
+		If the function called itself recursively, the number
+		only includes non-recursive calls, and is followed by
+		a `+' and the number of recursive calls.
+
+     name	The name of the current function.  The index number is
+		printed after it.  If the function is a member of a
+		cycle, the cycle number is printed between the
+		function's name and the index number.
+
+
+ For the function's parents, the fields have the following meanings:
+
+     self	This is the amount of time that was propagated directly
+		from the function into this parent.
+
+     children	This is the amount of time that was propagated from
+		the function's children into this parent.
+
+     called	This is the number of times this parent called the
+		function `/' the total number of times the function
+		was called.  Recursive calls to the function are not
+		included in the number after the `/'.
+
+     name	This is the name of the parent.  The parent's index
+		number is printed after it.  If the parent is a
+		member of a cycle, the cycle number is printed between
+		the name and the index number.
+
+ If the parents of the function cannot be determined, the word
+ `<spontaneous>' is printed in the `name' field, and all the other
+ fields are blank.
+
+ For the function's children, the fields have the following meanings:
+
+     self	This is the amount of time that was propagated directly
+		from the child into the function.
+
+     children	This is the amount of time that was propagated from the
+		child's children to the function.
+
+     called	This is the number of times the function called
+		this child `/' the total number of times the child
+		was called.  Recursive calls by the child are not
+		listed in the number after the `/'.
+
+     name	This is the name of the child.  The child's index
+		number is printed after it.  If the child is a
+		member of a cycle, the cycle number is printed
+		between the name and the index number.
+
+ If there are any cycles (circles) in the call graph, there is an
+ entry for the cycle-as-a-whole.  This entry shows who called the
+ cycle (as parents) and the members of the cycle (as children.)
+ The `+' recursive calls entry shows the number of function calls that
+ were internal to the cycle, and the calls entry for each member shows,
+ for that member, how many times it was called from other members of
+ the cycle.
+
+Copyright (C) 2012-2025 Free Software Foundation, Inc.
+
+Copying and distribution of this file, with or without modification,
+are permitted in any medium without royalty provided the copyright
+notice and this notice are preserved.
+
+Index by function name
+
+  [14] bcp                    [18] init_simulation         [6] step_EE
+  [13] bcu                    [16] init_u                  [7] step_RK4
+  [17] compute_divergence     [15] pressure_GS            [19] thomas_algorithm.constprop.0 (main.c)
+  [12] compute_pressure_rhs    [2] pressure_jacobi         [4] viscous_drag
+   [3] convection             [10] project_velocity       [20] write_u
+  [11] debug                   [1] rk4_combine_k
+   [9] field_add               [5] rk4_f

@@ -49,11 +49,20 @@ typedef struct {
     //
     const size_t X;
     const long seed;
+    const int pressure_iters;
 
 } simulation;
 
 
+const int get_pressure_iter(const double re, const size_t X) {
+
+    // My observations show that below re 1000 using GS at size 129, very few iter are required
+    if (re <= 1001)
+    return 5;
+}
+
 simulation init_simulation(const double re, const double dt, const size_t X, const double K, const long seed) {
+    // Based on re and X
     simulation simu = {
         .dx= 1.0 / X,
         .dt=dt,
@@ -75,6 +84,7 @@ simulation init_simulation(const double re, const double dt, const size_t X, con
         .udebug1 = (f64rw) calloc(X * X * 2, sizeof(double)),
         .X = X,
         .seed = seed,
+        .pressure_iters = get_pressure_iter(re, X),
     };
     return simu;
 }
@@ -197,21 +207,18 @@ void compute_pressure_rhs(f64ro u, f64rw rhs, const size_t X, const double dx) {
     }
 }
 
-// Not very jacobi... I dont use it anymore so I wont fix it for now
-void pressure_jacobi(f64rw u, f64ro rhs, f64rw p, f64rw pbuf, const size_t X, const double dx, const double K) {
+void pressure_GS2(f64rw u, double* p, f64ro rhs, const size_t X, const double dx, const double K, const unsigned int iters) {
     bcu(u, K, X);
     bcp(p, X);
 
-    const double omega = 2.0 / (1.0 + sin(M_PI / (double)X));
+    const double omega = 2.0 / 3.0;
     const double one_m_omega = 1.0 - omega;
 
-    const unsigned int iters = 25;
-
+    double* tmp;
     for (unsigned int iter = 0; iter < iters; ++iter) {
         for (size_t i = 1; i < X - 1; ++i) {
             for (size_t j = 1; j < X - 1; ++j) {
-                at1d(p, i, j, X) = one_m_omega * at1d(p, i, j, X)
-                    + omega * (at1d(p, i + 1, j, X) + at1d(p, i - 1, j, X) + at1d(p, i, j + 1, X) + at1d(p, i, j - 1, X) - at1d(rhs, i, j, X)) / 4.0;
+                at1d(p, i, j, X) = omega * at1d(p, i, j, X) + one_m_omega * (at1d(p, i + 1, j, X) + at1d(p, i - 1, j, X) + at1d(p, i, j + 1, X) + at1d(p, i, j - 1, X) - at1d(rhs, i, j, X)) * 0.25;
             }
         }
     }
@@ -237,7 +244,7 @@ void pressure_GS(f64rw u, f64rw p, f64ro rhs, const size_t X, const double dx, c
     }
 }
 
-// Multi grid pressure solve
+// Multi grid pressure solve TODO
 void pressure_MG(f64rw u, f64rw p, f64ro rhs, const size_t X, const double dx, const double K) {
     bcu(u, K, X);
     bcp(p, X);
@@ -247,7 +254,7 @@ void pressure_MG(f64rw u, f64rw p, f64ro rhs, const size_t X, const double dx, c
     const double omega = 2.0 / (1.0 + sin(M_PI / (double)X));
     const double one_m_omega = 1.0 - omega;
 
-    const unsigned int iters = X;
+    const unsigned int iters = 50;
     for (unsigned int iter = 0; iter < iters; ++iter) {
         for (size_t i = 1; i < X - 1; ++i) {
             for (size_t j = 1; j < X - 1; ++j) {
@@ -371,9 +378,10 @@ void rk4_combine_k(f64rw out, f64rw u, f64ro k1, f64ro k2, f64ro k3, f64ro k4, c
     }
 }
 
-void apply_pressure(f64rw out, f64rw u, f64rw p, f64rw rhs, dim X, cd dx, cd K) {
+void apply_pressure(f64rw out, f64rw u, f64rw p, f64rw rhs, dim X, cd dx, cd K, const int iters) {
     compute_pressure_rhs(u, rhs, X, dx);
-    pressure_GS(u, p, rhs, X, dx, K);
+    // pressure_GS(u, p, rhs, X, dx, K);
+    pressure_GS2(u, p, rhs, X, dx, K, iters);
     project_velocity(u, out, p, X, dx, K);
 }
 
@@ -572,7 +580,7 @@ void step_IMEX(simulation* sim) {
     cn_adi(visc, un, ubuf1, deriv_buf, x1, x2, X, K, dx, nu, dt);
 
     // Reapply pressure
-    apply_pressure(un, visc, p, rhs, X, dx, K);
+    apply_pressure(un, un, p, rhs, X, dx, K);
 
 }
 
@@ -580,8 +588,8 @@ void loop(simulation* sim, const size_t steps, const unsigned int write_interval
     connect_mmap(sim->X);
     for (unsigned int i = 0; i < steps; ++i) {
         // step_EE(sim);
-        // step_RK4(sim);
-        step_IMEX(sim);
+        step_RK4(sim);
+        // step_IMEX(sim);
         if (i % write_interval == 0) {
             write_u(sim->u, sim->X, i);
             printf("i: %d\n", i);
