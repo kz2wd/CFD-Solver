@@ -107,7 +107,7 @@ void write_out(f64ro u, f64ro p, const size_t X, const unsigned int step) {
     const size_t UN = X*X*2;
     const size_t PN = X*X*1;
     memcpy(shm->data, u, UN * sizeof(double));
-    // memcpy(shm->data + UN, p, PN * sizeof(double));
+    memcpy(shm->data + UN, p, PN * sizeof(double));
     atomic_store_explicit(&shm->write_idx, step, memory_order_release);
 }
 
