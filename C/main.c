@@ -98,14 +98,16 @@ typedef struct {
 static shm_t *shm;
 void connect_mmap(const size_t X) {
     int fd = shm_open("/sim_shm", O_RDWR, 0600);
-    const size_t N = X*X*2;
+    const size_t N = X*X*3;
     shm = mmap(NULL, sizeof(atomic_size_t) + sizeof(double) * N,
                       PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
 }
 
-void write_u(f64ro u, const size_t X, const unsigned int step) {
-    const size_t N = X*X*2;
-    memcpy(shm->data, u, N * sizeof(double));
+void write_out(f64ro u, f64ro p, const size_t X, const unsigned int step) {
+    const size_t UN = X*X*2;
+    const size_t PN = X*X*1;
+    memcpy(shm->data, u, UN * sizeof(double));
+    // memcpy(shm->data + UN, p, PN * sizeof(double));
     atomic_store_explicit(&shm->write_idx, step, memory_order_release);
 }
 
@@ -419,7 +421,7 @@ void step_RK4(simulation* sim) {
 
     rk4_combine_k(un, un, k1, k2, k3, k4, 0.166666666667 * dt, X);
 
-    apply_pressure(un, un, p, rhs, X, dx, K);
+    apply_pressure(un, un, p, rhs, X, dx, K, sim->pressure_iters);
 
 }
 
@@ -572,7 +574,7 @@ void step_IMEX(simulation* sim) {
 
     rk4_combine_k(un, un, k1, k2, k3, k4, 0.166666666667 * dt, X);
 
-    apply_pressure(un, un, p, rhs, X, dx, K);
+    apply_pressure(un, un, p, rhs, X, dx, K, sim->pressure_iters);
 
     // now solve EI ADI
 
@@ -580,7 +582,7 @@ void step_IMEX(simulation* sim) {
     cn_adi(visc, un, ubuf1, deriv_buf, x1, x2, X, K, dx, nu, dt);
 
     // Reapply pressure
-    apply_pressure(un, un, p, rhs, X, dx, K);
+    apply_pressure(un, un, p, rhs, X, dx, K, sim->pressure_iters);
 
 }
 
@@ -591,7 +593,7 @@ void loop(simulation* sim, const size_t steps, const unsigned int write_interval
         step_RK4(sim);
         // step_IMEX(sim);
         if (i % write_interval == 0) {
-            write_u(sim->u, sim->X, i);
+            write_out(sim->u, sim->p, sim->X, i);
             printf("i: %d\n", i);
             debug(sim->u, sim->X);
         }
