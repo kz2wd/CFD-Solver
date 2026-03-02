@@ -22,7 +22,9 @@ typedef double* const f64rw;
 typedef const size_t dim;
 typedef const double cd;
 
-typedef struct {
+
+typedef struct simulation simulation;
+struct simulation {
 
     const double dx;
     const double dt;
@@ -50,19 +52,32 @@ typedef struct {
     const size_t X;
     const long seed;
     const int pressure_iters;
+    const int preconditionning_steps;
+    const int full_solve_iters;
+    cd conditionning_dt;
+    void (*time_step)(simulation* sim, cd dt);
 
-} simulation;
+};
 
 
-const int get_pressure_iter(const double re, const size_t X) {
+void step_IMEX(simulation* sim, cd dt);
+void step_RK4(simulation* sim, cd dt);
+void step_EE(simulation* sim, cd dt);
 
-    // My observations show that below re 1000 using GS at size 129, very few iter are required
-    if (re <= 1001)
-    return 5;
-}
+simulation init_simulation(const double re, const double dt, const size_t X, const double K,
+    const int pressure_iters, const int preconditionning_steps, const int full_solve_iters, cd conditionning_dt,
+    const long seed, char* scheme) {
 
-simulation init_simulation(const double re, const double dt, const size_t X, const double K, const long seed) {
-    // Based on re and X
+    void (*time_step)(simulation* sim, cd dt);
+    time_step = step_RK4; // RK4 by default because I love it
+    if (strcmp(scheme, "EE") == 0) {
+        time_step = step_EE;
+    } else if (strcmp(scheme, "RK4") == 0) {
+        time_step = step_RK4;
+    } else if (strcmp(scheme, "IMEX") == 0) {
+        time_step = step_IMEX;
+    }
+
     simulation simu = {
         .dx= 1.0 / X,
         .dt=dt,
@@ -84,7 +99,10 @@ simulation init_simulation(const double re, const double dt, const size_t X, con
         .udebug1 = (f64rw) calloc(X * X * 2, sizeof(double)),
         .X = X,
         .seed = seed,
-        .pressure_iters = get_pressure_iter(re, X),
+        .pressure_iters = pressure_iters,
+        .preconditionning_steps = preconditionning_steps,
+        .full_solve_iters = full_solve_iters,
+        .conditionning_dt = conditionning_dt,
     };
     return simu;
 }
@@ -350,12 +368,12 @@ void field_add(f64rw out, f64ro a, cd b_factor, f64ro b, dim X) {
     }
 }
 
-void step_EE(simulation* sim){
+void step_EE(simulation* sim, cd dt) {
 
     convection(sim->u, sim->ubuf1, sim->X, sim->dx, sim->K);
     viscous_drag(sim->u, sim->ubuf2, sim->nu, sim->X, sim->dx, sim->K);
 
-    assemble_u(sim->u, sim->u, sim->ubuf1, sim->ubuf2, sim->dt, sim->X);
+    assemble_u(sim->u, sim->u, sim->ubuf1, sim->ubuf2, dt, sim->X);
     compute_pressure_rhs(sim->u, sim->pbuf1, sim->X, sim->dx);
     // pressure_jacobi(sim->u, sim->pbuf1, sim->p, sim->pbuf2, sim->X, sim->dx, sim->K);
     pressure_GS(sim->u, sim->p, sim->pbuf1, sim->X, sim->dx, sim->K);
@@ -387,13 +405,12 @@ void apply_pressure(f64rw out, f64rw u, f64rw p, f64rw rhs, dim X, cd dx, cd K, 
     project_velocity(u, out, p, X, dx, K);
 }
 
-void step_RK4(simulation* sim) {
+void step_RK4(simulation* sim, cd dt) {
 
     dim X = sim->X;
     cd dx = sim->dx;
     cd K = sim->K;
     cd nu = sim->nu;
-    cd dt = sim->dt;
 
     f64rw un = sim->u;
 
@@ -432,7 +449,6 @@ void mult_field(f64rw out, f64rw in, cd factor, dim X) {
             at2d(out, i, j, 1, X) = factor * at2d(in, i, j, 1, X);
         }
     }
-
 }
 
 void imex_f(f64rw out, f64rw u, f64rw conv_buf, dim X, cd dx, cd K) {
@@ -536,13 +552,12 @@ void cn_adi(f64rw out, f64rw u, f64rw inter_u, f64rw deri_buf, f64rw xbuf1, f64r
 }
 
 
-void step_IMEX(simulation* sim) {
+void step_IMEX(simulation* sim, cd dt) {
 
     dim X = sim->X;
     cd dx = sim->dx;
     cd K = sim->K;
     cd nu = sim->nu;
-    cd dt = sim->dt;
 
     f64rw un = sim->u;
 
@@ -588,15 +603,24 @@ void step_IMEX(simulation* sim) {
 
 void loop(simulation* sim, const size_t steps, const unsigned int write_interval) {
     connect_mmap(sim->X);
+
     for (unsigned int i = 0; i < steps; ++i) {
-        // step_EE(sim);
-        step_RK4(sim);
-        // step_IMEX(sim);
-        if (i % write_interval == 0) {
-            write_out(sim->u, sim->p, sim->X, i);
-            printf("i: %d\n", i);
-            debug(sim->u, sim->X);
+        if (i <= sim->preconditionning_steps) {
+            step_RK4(sim, sim->conditionning_dt);
+            if (i % write_interval == 0) {
+                write_out(sim->u, sim->p, sim->X, i);
+            }
+        }  else {
+            step_RK4(sim, sim->dt);
+            if (i % write_interval == 0) {
+                write_out(sim->u, sim->p, sim->X, i);
+            }
         }
+        if (i == sim->preconditionning_steps) {
+            compute_pressure_rhs(sim->u, sim->pbuf1, sim->X, sim->dx);
+            pressure_GS2(sim->u, sim->p, sim->pbuf1, sim->X, sim->dx, sim->K, sim->full_solve_iters);
+        }
+
     }
 }
 
@@ -607,7 +631,12 @@ typedef struct {
     int sampling;
     double K;
     double dt;
+    int pressure_iters;
+    int precond_steps;
+    double precond_dt;
+    int full_solve_iters;
     char* scheme;
+    int seed;
 } simulation_parameters;
 
 void clean_simulation_parameters(simulation_parameters* params) {
@@ -630,8 +659,18 @@ static int handler(void* user, const char* section, const char* name, const char
         params->K = atof(value);
     } else if (MATCH("Simulation", "dt")) {
         params->dt = atof(value);
+    } else if (MATCH("Simulation", "pressure_iters")) {
+        params->pressure_iters = atoi(value);
+    } else if (MATCH("Simulation", "precond_steps")) {
+        params->precond_steps = atoi(value);
+    } else if (MATCH("Simulation", "precond_dt")) {
+        params->precond_dt = atof(value);
+    } else if (MATCH("Simulation", "full_solve_iters")) {
+        params->full_solve_iters = atoi(value);
     } else if (MATCH("Simulation", "scheme")) {
         params->scheme = strdup(value);
+    } else if (MATCH("Simulation", "seed")) {
+        params->seed = atoi(value);
     } else {
         return 0;
     }
@@ -659,7 +698,8 @@ int main(int argc, char** argv) {
     printf("Starting simulation\n");
 
     simulation_parameters params = load_from_file("simulation.ini");
-    simulation sim = init_simulation(params.re, params.dt, params.N, params.K, 0);
+    simulation sim = init_simulation(params.re, params.dt, params.N, params.K, params.pressure_iters,
+        params.precond_steps, params.full_solve_iters, params.precond_dt, params.seed, params.scheme);
     init_u(sim.u, sim.X, 0.0001);
     init_p(sim.p, sim.X, 0.0001);
 
