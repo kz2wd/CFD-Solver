@@ -601,6 +601,7 @@ void step_IMEX(simulation* sim, cd dt) {
 
 }
 
+// TODO: used parametrized stepping
 void loop(simulation* sim, const size_t steps, const unsigned int write_interval) {
     connect_mmap(sim->X);
 
