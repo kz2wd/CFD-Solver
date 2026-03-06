@@ -104,6 +104,7 @@ simulation init_simulation(const double re, const double dt, const size_t X, con
         .full_solve_iters = full_solve_iters,
         .conditionning_dt = conditionning_dt,
     };
+    srand(seed);
     return simu;
 }
 
@@ -701,8 +702,8 @@ int main(int argc, char** argv) {
     simulation_parameters params = load_from_file("simulation.ini");
     simulation sim = init_simulation(params.re, params.dt, params.N, params.K, params.pressure_iters,
         params.precond_steps, params.full_solve_iters, params.precond_dt, params.seed, params.scheme);
-    init_u(sim.u, sim.X, 0.0001);
-    init_p(sim.p, sim.X, 0.0001);
+    init_u(sim.u, sim.X, 1.0);
+    init_p(sim.p, sim.X, 0.3);
 
     loop(&sim, params.steps, params.sampling);
 
