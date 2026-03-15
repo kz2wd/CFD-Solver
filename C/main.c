@@ -639,6 +639,8 @@ typedef struct {
     int full_solve_iters;
     char* scheme;
     int seed;
+    double velocity_initial_scale;
+    double pressure_initial_scale;
 } simulation_parameters;
 
 void clean_simulation_parameters(simulation_parameters* params) {
@@ -673,6 +675,10 @@ static int handler(void* user, const char* section, const char* name, const char
         params->scheme = strdup(value);
     } else if (MATCH("Simulation", "seed")) {
         params->seed = atoi(value);
+    } else if (MATCH("Simulation", "velocity_initial_scale")) {
+        params->velocity_initial_scale = atof(value);
+    } else if (MATCH("Simulation", "pressure_initial_scale")) {
+        params->pressure_initial_scale = atof(value);
     } else {
         return 0;
     }
@@ -702,8 +708,8 @@ int main(int argc, char** argv) {
     simulation_parameters params = load_from_file("simulation.ini");
     simulation sim = init_simulation(params.re, params.dt, params.N, params.K, params.pressure_iters,
         params.precond_steps, params.full_solve_iters, params.precond_dt, params.seed, params.scheme);
-    init_u(sim.u, sim.X, 1.0);
-    init_p(sim.p, sim.X, 0.3);
+    init_u(sim.u, sim.X, params.velocity_initial_scale);
+    init_p(sim.p, sim.X, params.pressure_initial_scale);
 
     loop(&sim, params.steps, params.sampling);
 

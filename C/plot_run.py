@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import time
 import plotly.graph_objects as go
 from IPython.display import display
 from ipywidgets import *
@@ -115,5 +116,17 @@ class RunPlot:
             self.fig.data[3].y = uU
 
         with self.fig2.batch_update():
-            self.fig2.data[0].z = np.linalg.norm(np.swapaxes(velocity, 0, 1), axis=-1)
-            self.fig2.data[1].z = np.swapaxes(np.squeeze(pressure, axis=-1), 0, 1)
+            z0 = np.linalg.norm(np.swapaxes(velocity, 0, 1), axis=-1)
+            z1 = np.swapaxes(np.squeeze(pressure, axis=-1), 0, 1)
+
+            self.fig2.data[0].update(z=z0)
+            self.fig2.data[0].zauto = True
+            self.fig2.data[1].update(z=z1)
+            self.fig2.data[1].zauto = True
+            # self.fig2.data[0].z = z0
+            # self.fig2.data[0].zmin = z0.min()
+            # self.fig2.data[0].zmax = z0.max()
+        
+            # self.fig2.data[1].z = z1
+            # self.fig2.data[1].zmin = z1.min()
+            # self.fig2.data[1].zmax = z1.max()
